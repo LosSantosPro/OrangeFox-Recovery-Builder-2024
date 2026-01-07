@@ -133,41 +133,70 @@ jobs:
         fi
         echo "DEVICE_TREE_URL=${DEVICE_TREE_URL}" >> $GITHUB_ENV
 
-    - name: Check if Recovery Exist
+    - name: Check if image exists
       run: |
         cd ${GITHUB_WORKSPACE}/OrangeFox/fox_${{ github.event.inputs.MANIFEST_BRANCH }}
-        if [ -f out/target/product/${{ github.event.inputs.DEVICE_NAME }}/OrangeFox*.img ]; then
-            echo "CHECK_IMG_IS_OK=true" >> $GITHUB_ENV
-            echo "FILE_PATH=${GITHUB_WORKSPACE}/OrangeFox/fox_${{ github.event.inputs.MANIFEST_BRANCH }}/out/target/product/${{ github.event.inputs.DEVICE_NAME }}" >> $GITHUB_ENV
-            echo "MD5_IMG=$(md5sum out/target/product/${{ github.event.inputs.DEVICE_NAME }}/OrangeFox*.img | cut -d ' ' -f 1)" >> $GITHUB_ENV
-        elif [ -f out/target/product/${{ github.event.inputs.DEVICE_NAME }}/target/product/${{ github.event.inputs.DEVICE_NAME }}/OrangeFox*.img ]; then
-            echo "CHECK_IMG_IS_OK=true" >> $GITHUB_ENV
-            echo "FILE_PATH=${GITHUB_WORKSPACE}/OrangeFox/fox_${{ github.event.inputs.MANIFEST_BRANCH }}/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/target/product/${{ github.event.inputs.DEVICE_NAME }}" >> $GITHUB_ENV
-            echo "MD5_IMG=$(md5sum out/target/product/${{ github.event.inputs.DEVICE_NAME }}/target/product/${{ github.event.inputs.DEVICE_NAME }}/OrangeFox*.img | cut -d ' ' -f 1)" >> $GITHUB_ENV
-        else
-            echo "Recovery out directory is empty."
-            cd Exit
+        OUT="out/target/product/${{ github.event.inputs.DEVICE_NAME }}"
+        echo "FOUND_ORANGEFOX_IMG=false" >> $GITHUB_ENV
+        echo "Listing $OUT"
+        ls -la "$OUT" || true
+
+        if [ -f "$OUT/boot.img" ]; then
+          echo "CHECK_IMG_IS_OK=true" >> $GITHUB_ENV
+          echo "FILE_PATH=${GITHUB_WORKSPACE}/OrangeFox/fox_${{ github.event.inputs.MANIFEST_BRANCH }}/$OUT" >> $GITHUB_ENV
+          echo "RECOVERY_TYPE=boot" >> $GITHUB_ENV
+          echo "MD5_IMG=$(md5sum "$OUT/boot.img" | cut -d ' ' -f 1)" >> $GITHUB_ENV
+          exit 0
         fi
 
-    - name: Rename the Recovery
-      run: |
-        cd ${{ env.FILE_PATH }}/
-        if [ "${{ github.event.inputs.BUILD_TARGET }}" = "boot" ]; then
-        mv OrangeFox*.img boot.img
-        echo "RECOVERY_TYPE=boot" >> $GITHUB_ENV
-        echo "boot.img file found!"
-        elif [ "${{ github.event.inputs.BUILD_TARGET }}" = "recovery" ]; then
-        mv OrangeFox*.img recovery.img
-        echo "RECOVERY_TYPE=recovery" >> $GITHUB_ENV
-        echo "recovery.img file found!"
-        elif [ "${{ github.event.inputs.BUILD_TARGET }}" = "vendorboot" ]; then
-        mv OrangeFox*.img vendor_boot.img
-        echo "RECOVERY_TYPE=vendor_boot" >> $GITHUB_ENV
-        echo "vendor_boot.img file found!"
-        else
-        echo "No Recovery file found!"
+        if [ -f "$OUT/recovery.img" ]; then
+          echo "CHECK_IMG_IS_OK=true" >> $GITHUB_ENV
+          echo "FILE_PATH=${GITHUB_WORKSPACE}/OrangeFox/fox_${{ github.event.inputs.MANIFEST_BRANCH }}/$OUT" >> $GITHUB_ENV
+          echo "RECOVERY_TYPE=recovery" >> $GITHUB_ENV
+          echo "MD5_IMG=$(md5sum "$OUT/recovery.img" | cut -d ' ' -f 1)" >> $GITHUB_ENV
+          exit 0
         fi
-      continue-on-error: true
+
+        if [ -f "$OUT/vendor_boot.img" ]; then
+          echo "CHECK_IMG_IS_OK=true" >> $GITHUB_ENV
+          echo "FILE_PATH=${GITHUB_WORKSPACE}/OrangeFox/fox_${{ github.event.inputs.MANIFEST_BRANCH }}/$OUT" >> $GITHUB_ENV
+          echo "RECOVERY_TYPE=vendor_boot" >> $GITHUB_ENV
+          echo "MD5_IMG=$(md5sum "$OUT/vendor_boot.img" | cut -d ' ' -f 1)" >> $GITHUB_ENV
+          exit 0
+        fi
+
+        if ls "$OUT"/OrangeFox*.img 1> /dev/null 2>&1; then
+          echo "CHECK_IMG_IS_OK=true" >> $GITHUB_ENV
+          echo "FILE_PATH=${GITHUB_WORKSPACE}/OrangeFox/fox_${{ github.event.inputs.MANIFEST_BRANCH }}/$OUT" >> $GITHUB_ENV
+          echo "MD5_IMG=$(md5sum "$OUT"/OrangeFox*.img | head -n 1 | cut -d ' ' -f 1)" >> $GITHUB_ENV
+          echo "FOUND_ORANGEFOX_IMG=true" >> $GITHUB_ENV
+          exit 0
+        fi
+
+        echo "No boot.img / recovery.img / vendor_boot.img / OrangeFox*.img found in $OUT"
+        exit 1
+
+    - name: Rename the Recovery
+      if: env.FOUND_ORANGEFOX_IMG == 'true'
+      run: |
+        cd "${{ env.FILE_PATH }}/"
+
+        if [ "${{ github.event.inputs.BUILD_TARGET }}" = "boot" ]; then
+          mv OrangeFox*.img boot.img
+          echo "RECOVERY_TYPE=boot" >> $GITHUB_ENV
+          echo "boot.img file found!"
+        elif [ "${{ github.event.inputs.BUILD_TARGET }}" = "recovery" ]; then
+          mv OrangeFox*.img recovery.img
+          echo "RECOVERY_TYPE=recovery" >> $GITHUB_ENV
+          echo "recovery.img file found!"
+        elif [ "${{ github.event.inputs.BUILD_TARGET }}" = "vendorboot" ]; then
+          mv OrangeFox*.img vendor_boot.img
+          echo "RECOVERY_TYPE=vendor_boot" >> $GITHUB_ENV
+          echo "vendor_boot.img file found!"
+        else
+          echo "No Recovery file found!"
+        fi
+
       
     - name: Include Recovery Installer
       run: |
@@ -214,7 +243,7 @@ jobs:
         body: |
           Target: ${{ env.RECOVERY_TYPE }}.img
           Build: ${{ github.event.inputs.MANIFEST_BRANCH }}
-          Device: [Device Tree/Branch](${{ env.DEVICE_TREE_URL }}/tree/${{ inputs.DEVICE_TREE_BRANCH }})
+          Device: [Device Tree/Branch](${{ env.DEVICE_TREE_URL }}/tree/${{ github.event.inputs.DEVICE_TREE_BRANCH }})
           Commit: Most recent [commit](${{ env.DEVICE_TREE_URL }}/commit/${{ env.COMMIT_ID }}) during building.
           MD5 (img): ${{ env.MD5_IMG }}
           
