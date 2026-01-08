@@ -113,9 +113,18 @@ jobs:
       id: fox_branch
       with:
         cond: ${{ github.event.inputs.MANIFEST_BRANCH == '11.0' || github.event.inputs.MANIFEST_BRANCH == '12.1' }}
-        if_true: lunch twrp_${{ github.event.inputs.DEVICE_NAME }}-eng && make clean && ( [ "${{ github.event.inputs.BUILD_TARGET }}" = "vendorboot" ] && mka adbd recoveryimage vendorbootimage || mka adbd ${{ github.event.inputs.BUILD_TARGET }}image )
+        if_true: |
+          lunch twrp_${{ github.event.inputs.DEVICE_NAME }}-eng
+          make clean
+
+          if [ "${{ github.event.inputs.BUILD_TARGET }}" = "vendorboot" ]; then
+            mkdir -p out/target/product/${{ github.event.inputs.DEVICE_NAME }}/root
+            mka adbd recoveryimage vendorbootimage
+          else
+            mka adbd ${{ github.event.inputs.BUILD_TARGET }}image
+          fi
         if_false: lunch omni_${{ github.event.inputs.DEVICE_NAME }}-eng && make clean && mka ${{ github.event.inputs.BUILD_TARGET }}image
-      
+
     - name: Building OrangeFox
       run: |
         cd ${GITHUB_WORKSPACE}/OrangeFox/fox_${{ github.event.inputs.MANIFEST_BRANCH }}
